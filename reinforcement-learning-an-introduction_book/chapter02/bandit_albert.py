@@ -73,7 +73,8 @@ class Player():
     def epsilon_greedy(self, eps):
         if np.random.rand() < eps:
             return np.random.choice(range(self.n_arm))
-        return np.argmax(self.q_val)
+        q_best = np.max(self.q_val)
+        return np.random.choice(np.where(self.q_val == q_best)[0])
 
     def upper_confidence_bound(self, c):
         qu = self.q_val + c * ( np.log(self.N) / (self.Na + 1e-10) ) ** (1/2)
@@ -111,7 +112,7 @@ class Player():
         self.Ha = self.Ha + alpha * (r - self.r_ave) * (I_Ata - PIa)
 
 
-def simulation(bandit, player, runs, times, algo, alpha_Ha=0.1, **kwarg):
+def simulation(bandit, player, runs, times, algo, alpha_q=None, alpha_Ha=0.1, **kwarg):
     rewards = np.zeros((runs, times))
     hit_best_action = np.zeros((runs, times))
     I = tqdm(range(runs))
@@ -121,7 +122,7 @@ def simulation(bandit, player, runs, times, algo, alpha_Ha=0.1, **kwarg):
         for t in range(times):
             k = player.get_action(algo=algo, **kwarg)
             r = player.pulling_an_arm(k)
-            player.update_q(k, r)
+            player.update_q(k, r, alpha_q)
             if algo == 'policy_gradient':
                 player.update_Ha(k, r, alpha_Ha)
             rewards[i, t] = r
@@ -131,24 +132,124 @@ def simulation(bandit, player, runs, times, algo, alpha_Ha=0.1, **kwarg):
     return rewards, hit_best_action
     
 
-if __name__ == '__main__':
-    # r_mu = np.random.uniform(low=0, high=5, size=10)
-    # bandit = MultiArmedBandit()
-    # player = Player(bandit)
-    # rewards, hit_best_action = simulation(bandit, player, 2000, 1000, 'epsilon_greedy', eps=0.1)
+def plot_figure_2_1(n_points):
+    bandit = MultiArmedBandit()
+    n_arm = bandit.n_arm
+    data = None
+    for _ in range(n_points):
+        rs = np.zeros((1, n_arm))
+        for k in range(n_arm):
+            rs[0, k] = bandit.an_arm_be_pulled(k)
+        if data is None:
+            data = rs
+        else:
+            data = np.r_[data, rs]
+    plt.violinplot(data)
+    plt.hlines(y=0, xmin=0, xmax=n_arm+1, linestyles='--')
+    plt.xlabel('action')
+    plt.ylabel('reward distribution')
+    plt.show()
 
-    # ts = list(range(rewards.shape[1]))
-    # plt.hlines(y=bandit.r_mu[bandit.best_action], xmin=0, xmax=1000)
-    # plt.plot(ts, rewards.mean(axis=0))
-    # plt.show()
 
-    # plt.hlines(y=1, xmin=0, xmax=1000)
-    # plt.plot(ts, hit_best_action.mean(axis=0))
-    # plt.show()
-
-
-    a = 3
+def plot_figure_2_2(epsilons):
+    Nt = 1000
+    Nr = 2000
+    algo = 'epsilon_greedy'
+    bandit = MultiArmedBandit(r_mu=np.random.uniform(low=0, high=5, size=10))
+    player = Player(bandit)
+    rewards = dict() 
+    hit_best_action = dict()
+    for eps in epsilons:
+        rewards[eps], hit_best_action[eps] = \
+            simulation(bandit, player, Nr, Nt, algo, eps=eps)
     
+    ts = list(range(Nt))
+    plt.subplot(2, 1, 1)
+    plt.hlines(y=bandit.r_mu[bandit.best_action], xmin=0, xmax=1000)
+    for eps in epsilons:
+        plt.plot(ts, rewards[eps].mean(axis=0), label=f'eps={eps}')
+    plt.xlabel('steps')
+    plt.ylabel('average reward')
+    plt.legend()
+
+    plt.subplot(2, 1, 2)
+    plt.hlines(y=1, xmin=0, xmax=1000)
+    for eps in epsilons:
+        plt.plot(ts, hit_best_action[eps].mean(axis=0), label=f'eps={eps}')
+    plt.xlabel('steps')
+    plt.ylabel('% optimal action')
+    plt.legend()
+    plt.show()
+
+
+def plot_figure_2_3(q_vals, epsilons):
+    assert len(q_vals) == len(epsilons)
+    Nt = 1000
+    Nr = 2000
+    algo = 'epsilon_greedy'
+    # bandit = MultiArmedBandit(r_mu=np.random.uniform(low=0, high=5, size=10))
+    bandit = MultiArmedBandit()
+    rewards = dict() 
+    hit_best_action = dict()
+    for q0, eps in zip(q_vals, epsilons):
+        player = Player(bandit, q0=q0)
+        rewards[eps], hit_best_action[eps] = \
+            simulation(bandit, player, Nr, Nt, algo, alpha_q=0.1, eps=eps)
+    
+    ts = list(range(Nt))
+    plt.hlines(y=1, xmin=0, xmax=1000)
+    for q0, eps in zip(q_vals, epsilons):
+        plt.plot(ts, hit_best_action[eps].mean(axis=0), label=f'eps={eps}, q0={q0}')
+        print(f'====== eps={eps}, q0={q0} ======')
+        print(hit_best_action[eps].mean(axis=0)[0:20])
+    plt.xlabel('steps')
+    plt.ylabel('% optimal action')
+    plt.legend()
+    plt.show()
+
+
+def plot_figure_2_4():
+    Nt = 1000
+    Nr = 2000
+    bandit = MultiArmedBandit()
+    player = Player(bandit)
+    UCB = simulation(bandit, player, Nr, Nt, 'UCB', c=2)
+    EPS = simulation(bandit, player, Nr, Nt, 'epsilon_greedy', eps=0.1)
+    ts = list(range(Nt))
+    plt.hlines(y=bandit.r_mu[bandit.best_action], xmin=0, xmax=1000)
+    plt.plot(ts, UCB[0].mean(axis=0), label=f'UCB, c=2')
+    plt.plot(ts, EPS[0].mean(axis=0), label=f'EPS, e=0.1')
+    plt.xlabel('steps')
+    plt.ylabel('average reward')
+    plt.legend()
+    plt.show()
+
+
+def plot_figure_2_5():
+    Nt = 1000
+    Nr = 2000
+    bandit = MultiArmedBandit()
+    player = Player(bandit)
+    pg1 = simulation(bandit, player, Nr, Nt, 'policy_gradient', alpha_Ha=0.1)
+    pg4 = simulation(bandit, player, Nr, Nt, 'policy_gradient', alpha_Ha=0.4)
+    ts = list(range(Nt))
+    plt.hlines(y=1, xmin=0, xmax=1000)
+    plt.plot(ts, pg1[1].mean(axis=0), label=f'PG, alpha=0.1')
+    plt.plot(ts, pg4[1].mean(axis=0), label=f'PG, alpha=0.4')
+    plt.xlabel('steps')
+    plt.ylabel('% optimal action')
+    plt.legend()
+    plt.show()
+
+
+
+
+if __name__ == '__main__':
+    # plot_figure_2_1(n_points=1000)
+    #plot_figure_2_2(epsilons=[0, 0.01, 0.1])
+    #plot_figure_2_3(q_vals=(0, 5), epsilons=(0.1, 0))
+    # plot_figure_2_4()
+    plot_figure_2_5()
     
 
 
