@@ -237,8 +237,8 @@ def figure_2_6(runs=2000, time=1000):
 
 if __name__ == '__main__':
     figure_2_1()
-    figure_2_2()
-    figure_2_3()
-    figure_2_4()
-    figure_2_5()
-    figure_2_6()
+    # figure_2_2()
+    # figure_2_3()
+    # figure_2_4()
+    # figure_2_5()
+    # figure_2_6()
