@@ -247,9 +247,9 @@ def plot_figure_2_5():
 if __name__ == '__main__':
     # plot_figure_2_1(n_points=1000)
     #plot_figure_2_2(epsilons=[0, 0.01, 0.1])
-    #plot_figure_2_3(q_vals=(0, 5), epsilons=(0.1, 0))
+    plot_figure_2_3(q_vals=(0, 5), epsilons=(0.1, 0))
     # plot_figure_2_4()
-    plot_figure_2_5()
+    # plot_figure_2_5()
     
 
 
