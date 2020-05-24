@@ -79,8 +79,8 @@ def figure_3_2():
                     # bellman equation
                     new_value[i, j] += ACTION_PROB * (reward + DISCOUNT * value[next_i, next_j])
         if np.sum(np.abs(value - new_value)) < 1e-4:
-            draw_image(np.round(new_value, decimals=2))
-            plt.savefig('../images/figure_3_2.png')
+            (np.round(new_value, decimals=2))
+            plt.savefig('images/figure_3_2.png')
             plt.close()
             break
         value = new_value
@@ -101,7 +101,7 @@ def figure_3_5():
                 new_value[i, j] = np.max(values)
         if np.sum(np.abs(new_value - value)) < 1e-4:
             draw_image(np.round(new_value, decimals=2))
-            plt.savefig('../images/figure_3_5.png')
+            plt.savefig('images/figure_3_5.png')
             plt.close()
             break
         value = new_value
