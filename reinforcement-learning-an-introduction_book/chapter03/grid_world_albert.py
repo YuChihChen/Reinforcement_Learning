@@ -45,7 +45,6 @@ class GridWordEnviroment(EnviromentMDP):
                 reward = 0.
         return [(new_state, reward, 1.)]
         
-
     def _is_ouside_of_grid(self, state):
         """Check if the state is outside the the grid world."""
         state_np = np.array(state)
@@ -56,18 +55,38 @@ class GridWordEnviroment(EnviromentMDP):
 
 class GridWordAgent(AgentMDP):
     def __init__(self, env, gamma):
-        super().__init__()
+        super().__init__(env, gamma)
+        self.grid_size = env.grid_size
 
+    def fill_Vvalues_in_grid(self, values):
+        grid = np.zeros((self.grid_size, self.grid_size))
+        for state in values:
+            grid[state[0], state[1]] = values[state]
+        return grid
+        
 
 if __name__ == '__main__':
     grid_size = 5
     env = GridWordEnviroment(grid_size=grid_size)
-    agent = AgentMDP(env, gamma=0.9)
-    Vvalues_random_policy = agent.policy_evaluation(policy=agent.random_policy, mode='Vp')
-    Qvalues_random_policy = agent.policy_evaluation(policy=agent.random_policy, mode='Qp')
+    agent = GridWordAgent(env, gamma=0.9)
+
+    Vvalues_random_policy = agent.get_v_value_by_policy_evaluation(policy=agent.random_policy)
+    Qvalues_random_policy = agent.get_q_value_by_policy_evaluation(policy=agent.random_policy)
     for state in Vvalues_random_policy:
         Vp_s = 0.
         for action in Qvalues_random_policy[state]:
             Vp_s += Qvalues_random_policy[state][action] * 0.25
         diff = np.abs(Vvalues_random_policy[state] - Vp_s)
         print(f'state: {state}, diff: {diff}')
+    
+    Vvalues_optimal = agent.get_optimal_v_value_by_value_iteration()
+
+    Vvalues_in_grid = agent.fill_Vvalues_in_grid(Vvalues_optimal)
+
+    policy_optimal = agent.extract_policy_from_values(Vvalues_optimal)
+    Vvalues_optimal_policy = agent.get_v_value_by_policy_evaluation(policy_optimal)
+    optimal_Vvalues_in_grid = agent.fill_Vvalues_in_grid(Vvalues_optimal_policy)
+    print(np.abs(Vvalues_in_grid - optimal_Vvalues_in_grid))
+    
+    policy_optimal2 = agent.get_optimal_policy_by_policy_iteration(max_inner_iteration=1)
+    print(policy_optimal == policy_optimal2)
