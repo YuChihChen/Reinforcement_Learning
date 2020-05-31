@@ -61,6 +61,7 @@ def figure_4_3():
         # https://github.com/ShangtongZhang/reinforcement-learning-an-introduction/issues/83
         policy[state] = actions[np.argmax(np.round(action_returns[1:], 5)) + 1]
 
+    print(state_value)
     plt.figure(figsize=(10, 20))
 
     plt.subplot(2, 1, 1)
