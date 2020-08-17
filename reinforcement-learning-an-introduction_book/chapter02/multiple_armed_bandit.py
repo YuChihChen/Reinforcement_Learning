@@ -13,8 +13,8 @@ import matplotlib.pyplot as plt
     這裡我們用 Average Regret，denoted by E[Lt]，來衡量策略好壞，
     Regret : Lt = V - p(I_t)
         V : 機率 pi 最大那台機器的機率, i.e., V = max_i pi
-        p(I_t): 在 t 時間選擇如果選擇 i 機器，則 p(I_t=i) = pi
-    Average Regret: 做 N 次實驗後，對 N 個 Lt 取平均
+        p(I_t): 在 t 時間如果選擇 i 機器，則 p(I_t=i) = pi
+    Average Regret: 做 N 回合實驗後，對 N 個 Lt 取平均
         E[Lt] ~ (1/N) * sum_{s=1}^{N} Lt(s)  
         Lt(s): 代表第 s 次實驗（每次實驗會拉桿 T 次），第 t 次拉桿獲得的 regret，
     備註：這裡假設老虎機會幫我們記錄 V-p(I_t)，這是因為只有老虎機知道 V and pi
@@ -62,7 +62,7 @@ class Bandit:
             reward = 1
         else:
             reward = 0
-        # --- record the accumulated regrets ---
+        # --- record the accumulated regrets (請老虎機幫忙記錄一下 regrets) ---
         if len(self.accum_regrets) == 0:
             last_accum_regrets = 0
         else:
@@ -76,7 +76,7 @@ class Bandit:
 
 # ================================= 玩家 =================================
 # 備註：以下策略的程式的呈現以方便讀者理解策略思路為優先，不考慮程式執行時間和空間的節省，
-# 大家在寫作業的時候可以把這些因素考慮進來
+# 大家在寫作業的時候可以把這些因素考慮進來，例如使用 numpy 來做計算和利用上一時間已經算過的數值
 class Player:
     def __init__(self, arms_number):
         self.arms_number = arms_number                  # 手臂數目
@@ -91,7 +91,7 @@ class Player:
         else:
             self.rewards[arm_id].append(reward)
 
-    # ---------------------------- 策略函數 --------------------------------
+    # ---------------------------- 策略函數: 都是回傳老虎機的手臂 id --------------------------------
     def choose_an_arm_by_random(self, **kwargs):
         """隨便選一支手臂並回傳。"""
         return random.choice(range(self.arms_number))
@@ -109,8 +109,10 @@ class Player:
         """
         if epsilon < 0 or epsilon > 1:
             raise ValueError('The value of epsilon must be between [0, 1]') 
+        
         arm_id_with_max_reward = self.choose_an_arm_by_greedy()  # 目前最高平均報酬的手臂 id
         rest_arm_id = list(set(range(self.arms_number)) - set({arm_id_with_max_reward})) # 其他手臂 ids
+        
         prob_for_best_arm = 1 - epsilon + epsilon/self.arms_number  # 選擇目前平均報酬最高手臂的機率
         if random.uniform(0, 1) <= prob_for_best_arm:
             be_chosen_arm_id = arm_id_with_max_reward
@@ -120,19 +122,44 @@ class Player:
 
     def choose_an_arm_by_optimistic_initial_value(self, initial_value):
         """取各手臂的目前累積報酬和初始值的平均，回傳最大平均值的手臂id。"""
-        average_rewards = [0] * self.arms_number
+        average_rewards = self._get_average_rewards()
         for i in range(self.arms_number):
-            size = len(self.rewards[i])                             # ith 手臂目前被拉了幾次
-            if size > 0:                                            # ith 手臂可能沒被選過
-                average_rewards[i] = (initial_value + sum(self.rewards[i])) / (size + 1)
-            else:
-                average_rewards[i] = initial_value
+            size = len(self.rewards[i])
+            average_rewards[i] = (initial_value + size * average_rewards[i]) / (size + 1)
         return average_rewards.index(max(average_rewards))
+
+    def choose_an_arm_by_average_reward_plus_std(self, multiplier, initial_value):
+        """選擇手臂根據它們的 mu + c * sigma / sart(N).
+        
+        這裡也需要使用 initial_value
+        同於樂觀初始值的手法，用以解決需要多跑幾輪隨機策略的問題，
+        不然沒有資料的情況下，mu = 0，sigma = 0，會造成選擇卡在一開始有值的手臂。
+        """
+        average_reward_plus_std = [0] * self.arms_number
+        for i in range(self.arms_number):
+            size = len(self.rewards[i])
+
+            # --- average reward ---
+            mu = initial_value
+            for j in range(size):
+                mu += self.rewards[i][j]
+            mu = mu / (size + 1) 
+            
+            # --- variance ---
+            variance = (initial_value - mu) ** 2
+            for j in range(size):
+                variance += (self.rewards[i][j] - mu) ** 2
+            variance = variance / (size + 1)
+            sigma = variance ** 0.5
+            
+            average_reward_plus_std[i] = mu + multiplier * sigma / ((size + 1) ** 0.5)
+        return average_reward_plus_std.index(max(average_reward_plus_std))
 
     def choose_an_arm_by_upper_confidence_bound(self, upper_bound, lower_bound):
         """根據 UCB 策略回傳手臂id，取以下公式最大值的手臂id。
         
-        公式： average_reward + (upper_bound - lower_bound) * sqrt( 2 * log(total_pull) / this_pull)
+        公式： average_reward 
+            + (upper_bound - lower_bound) * sqrt( 2 * log(num_total_pulls) / num_pulls)
         """
         # --- get the number of total pulls ---
         num_total_pulls = 0
@@ -163,7 +190,6 @@ class Player:
         return average_rewards
 
 
-
 # ================================= 測試策略 =================================
 def get_accum_regrets_with_runs_and_times(bandit, player,
                                           number_of_runs, number_of_pulls, 
@@ -173,12 +199,14 @@ def get_accum_regrets_with_runs_and_times(bandit, player,
     Input:
         bandit: object, 老虎機
         player: object, 玩家
-        number_of_runs: int, 要完幾回合，就是最前說明文件的 N
-        number_of_pulls: int, 毎一回合可以拉幾次桿，就是最前說明文件的 T
-        stgy_name: str, 要使用哪個策略，例如：'random', 'greedy', 'epsilon-greedy', 'UCB'... ect.
+        number_of_runs: int, 要玩幾回合，就是最前面說明文件的 N
+        number_of_pulls: int, 毎一回合可以拉幾次桿，就是最前面說明文件的 T
+        stgy_name: str, 要使用哪個策略，例如：'random', 'greedy', 'epsilon-greedy'... ect.
         **kwargs: arguments for strategy
+    
     Output:
         accum_regrets_2d: list of list, accum_regrets_2d[n][t] means nth run and tth pull
+    
     備註：
         accum_regrets_2d: 2d 代表這是個 2d list，N*T matrix 的形式， 
         accum_regrets: 沒有後綴代表就是個 1d list， 1*T vector 的形式
@@ -189,40 +217,47 @@ def get_accum_regrets_with_runs_and_times(bandit, player,
         'greedy': player.choose_an_arm_by_greedy,
         'epsilon-greedy': player.choose_an_arm_by_epsilon_greedy,
         'optimistic_initial_value': player.choose_an_arm_by_optimistic_initial_value,
+        'average_reward_plus_std': player.choose_an_arm_by_average_reward_plus_std,
         'upper_confidence_bound': player.choose_an_arm_by_upper_confidence_bound
     }
 
     # --- 檢查和設定參數 ---
     if bandit.arms_number != player.arms_number:
         raise ValueError('老虎機的手臂數目不同於玩家設定的手臂數目')
-    # greedy 策略比較特別，要先執行一陣子隨機，再貪婪地選最高平均報酬的手臂
-    # 否則會卡在第一個報酬不為0的機台
+
+    # greedy 策略比較特別，要先執行一陣子隨機，再貪婪地選最高平均報酬的手臂，否則會卡在第一個報酬不為0的手臂
     if stgy_name == 'greedy':
         number_of_random_pull = kwargs['number_of_random_pull']
     else:
         number_of_random_pull = 0
+    
     if number_of_random_pull > number_of_pulls:
         raise ValueError('貪婪策略中隨機拉桿的個數大於允許的總拉桿次數')
     
     # --- 執行 N 回合，毎一回合拉桿 T 次 ---
     accum_regrets_2d = list()
     for _ in range(number_of_runs):
+        # 將上回合的記錄歸零
         bandit.reset_regret_information()
         player.reset_reward_information()
+        
         # 先執行隨機策略 (目前只有貪婪策略需要這麼做)
         for _ in range(number_of_random_pull): 
             stgy_fun = player.choose_an_arm_by_random                 
-            _player_pull_an_arm_by(player, bandit, stgy_fun, **kwargs)
+            _player_pull_an_arm_by_strategy(player, bandit, stgy_fun, **kwargs)
+        
         # 執行主要策略
-        for _ in range(number_of_pulls - number_of_random_pull):   # 執行貪婪策略
+        for _ in range(number_of_pulls - number_of_random_pull):
             stgy_fun = strategy_functions[stgy_name]
-            _player_pull_an_arm_by(player, bandit, stgy_fun, **kwargs)
+            _player_pull_an_arm_by_strategy(player, bandit, stgy_fun, **kwargs)
+        
         # 儲存該回合的 accum_regrets
         accum_regrets_2d.append(bandit.accum_regrets)
+    
     return accum_regrets_2d
 
 
-def _player_pull_an_arm_by(player, bandit, stgy_fun, **kwargs):
+def _player_pull_an_arm_by_strategy(player, bandit, stgy_fun, **kwargs):
     arm_id = stgy_fun(**kwargs)                         # 策略選擇要拉的手臂
     reward = bandit.pull_an_arm(arm_id)                 # 實際拉手臂得到的報酬
     player.update_reward_information(arm_id, reward)    # 玩家記錄他得到的報酬
@@ -311,7 +346,7 @@ if __name__ == "__main__":
     plot_accum_regrets_2d_for_a(accum_regrets_2d_epsilon_greedy, stgy_name)
 
 
-    # --- 4. 樂觀初始值 ---
+    #--- 4. 樂觀初始值 ---
     stgy_name = 'optimistic_initial_value'
     initial_value = 1
     accum_regrets_2d_optimistic_initial_value = \
@@ -321,7 +356,18 @@ if __name__ == "__main__":
     plot_accum_regrets_2d_for_a(accum_regrets_2d_optimistic_initial_value, stgy_name)
 
 
-    # --- 5. UCB ---
+    # --- 5. mu + c * sigma ---
+    stgy_name = 'average_reward_plus_std'
+    multiplier = 1.
+    initial_value = 1.
+    accum_regrets_2d_average_reward_plus_std = \
+        get_accum_regrets_with_runs_and_times(bandit, player, 
+                                              number_of_runs, number_of_pulls, stgy_name, 
+                                              multiplier=multiplier, initial_value=initial_value)
+    plot_accum_regrets_2d_for_a(accum_regrets_2d_average_reward_plus_std, stgy_name)
+
+
+    # --- 6. UCB ---
     stgy_name = 'upper_confidence_bound'
     upper_bound = 1
     lower_bound = 0
@@ -338,6 +384,7 @@ if __name__ == "__main__":
         'greedy': accum_regrets_2d_greedy,
         'epsilon-greedy': accum_regrets_2d_epsilon_greedy,
         'optimistic_initial_value': accum_regrets_2d_optimistic_initial_value,
+        'average_reward_plus_std': accum_regrets_2d_average_reward_plus_std,
         'upper_confidence_bound': accum_regrets_2d_upper_confidence_bound
     }
     plot_average_accum_regrets(accum_regrets_2d_dict)
